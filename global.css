@@ -1,0 +1,29 @@
+/* globals.css - Design System */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  /* Primary Colors */
+  --color-primary: oklch(0.6 0.2 250);
+  --color-primary-foreground: oklch(1 0 0);
+  
+  /* Status Colors */
+  --color-active: oklch(0.7 0.2 145);
+  --color-pending: oklch(0.8 0.15 85);
+  --color-error: oklch(0.65 0.25 25);
+  
+  /* Neutral */
+  --color-background: oklch(0.98 0 0);
+  --color-foreground: oklch(0.15 0 0);
+  --color-muted: oklch(0.95 0 0);
+  --color-muted-foreground: oklch(0.5 0 0);
+  --color-border: oklch(0.9 0 0);
+  
+  /* Canvas */
+  --color-canvas-grid: oklch(0.92 0 0);
+  --color-canvas-bg: oklch(0.97 0.005 250);
+  
+  /* Shadows */
+  --shadow-card: 0 1px 3px oklch(0 0 0 / 0.1);
+  --shadow-card-hover: 0 4px 12px oklch(0 0 0 / 0.15);
+}
