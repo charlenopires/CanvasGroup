@@ -15,10 +15,11 @@ export async function GET() {
       orderBy: (groups, { asc }) => [asc(groups.type), asc(groups.name)],
     });
 
-    // Transform to include currentGrade (most recent grade / 10)
+    // Transform to include grade and observations from the most recent grade entry
     const groupsWithGrade = allGroups.map(group => ({
       ...group,
-      currentGrade: group.grades[0] ? group.grades[0].grade / 10 : null,
+      grade: group.grades[0] ? group.grades[0].grade : undefined,
+      observations: group.grades[0] ? group.grades[0].observations : undefined,
     }));
 
     return NextResponse.json(groupsWithGrade);
@@ -38,8 +39,8 @@ export async function POST(request: NextRequest) {
 
     // Get IP and user agent for activity log
     const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0] ||
-                      request.headers.get('x-real-ip') ||
-                      'unknown';
+      request.headers.get('x-real-ip') ||
+      'unknown';
     const userAgent = request.headers.get('user-agent') || 'unknown';
 
     // Create group

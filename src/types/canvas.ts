@@ -12,6 +12,8 @@ export interface GroupNodeData extends Record<string, unknown> {
   members: string[];
   projectId?: string;
   status?: GroupStatus;
+  grade?: number;
+  observations?: string;
 }
 
 export type GroupNode = Node<GroupNodeData>;

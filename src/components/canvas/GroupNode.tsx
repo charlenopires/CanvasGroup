@@ -28,7 +28,11 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function GroupNodeComponent({ data, selected }: NodeProps) {
+function GroupNodeComponent({
+  id,
+  data,
+  selected,
+}: NodeProps) {
   const nodeData = data as GroupNodeData;
   const style = nodeStyles[nodeData.type as NodeType];
   const isMedio = nodeData.type === 'medio-a' || nodeData.type === 'medio-b';
@@ -40,20 +44,45 @@ function GroupNodeComponent({ data, selected }: NodeProps) {
       className={`
         relative w-[260px] bg-white rounded-lg border border-dashed border-slate-300 border-l-[3px] border-l-solid ${style.accentColor}
       `}
-      style={{ borderLeftStyle: 'solid' }}
+      style={{
+        borderLeftStyle: 'solid',
+        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.06)'
+      }}
     >
-      {/* Connection Handle - Right side for Superior (receives from Médio) */}
+      {/* Connection Handles for Superior - Left and Right sides (receives from both Médio groups) */}
       {isSuperior && (
+        <>
+          {/* Left handle - receives from Médio A */}
+          <Handle
+            type="target"
+            position={Position.Left}
+            id="left"
+            className="!w-2 !h-2 !rounded-full !bg-slate-300 !border-0"
+            style={{ left: -4 }}
+          />
+          {/* Right handle - receives from Médio B */}
+          <Handle
+            type="target"
+            position={Position.Right}
+            id="right"
+            className="!w-2 !h-2 !rounded-full !bg-slate-300 !border-0"
+            style={{ right: -4 }}
+          />
+        </>
+      )}
+
+      {/* Connection Handle for Médio A - Right side (connects to Superior on left) */}
+      {nodeData.type === 'medio-a' && (
         <Handle
-          type="target"
+          type="source"
           position={Position.Right}
-          className="!w-2 !h-2 !rounded-full !bg-slate-300 !border-0"
+          className="!w-2 !h-2 !rounded-full !bg-slate-300 !border-0 cursor-crosshair"
           style={{ right: -4 }}
         />
       )}
 
-      {/* Connection Handle - Left side for Médio (connects to Superior) */}
-      {isMedio && (
+      {/* Connection Handle for Médio B - Left side (connects to Superior on right) */}
+      {nodeData.type === 'medio-b' && (
         <Handle
           type="source"
           position={Position.Left}
@@ -82,7 +111,8 @@ function GroupNodeComponent({ data, selected }: NodeProps) {
         </div>
 
         {/* Group Leader - Only for Superior */}
-        {isSuperior && nodeData.leaderName && (
+        {/* Group Leader - For all groups if available */}
+        {nodeData.leaderName && (
           <div className="flex items-center gap-3 mb-4">
             {nodeData.leaderAvatar ? (
               <img
@@ -99,7 +129,7 @@ function GroupNodeComponent({ data, selected }: NodeProps) {
             )}
             <div>
               <p className="text-[10px] text-slate-400 uppercase tracking-wide font-medium">
-                Group Leader
+                Líder
               </p>
               <p className="text-sm font-semibold text-slate-700">
                 {nodeData.leaderName}
@@ -152,6 +182,31 @@ function GroupNodeComponent({ data, selected }: NodeProps) {
             )}
           </div>
         )}
+      </div>
+
+      {/* Footer - Grading */}
+      <div className="px-4 pb-3">
+        <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+          {typeof nodeData.grade === 'number' ? (
+            <div
+              className="flex items-center gap-1.5 text-amber-600 font-bold text-sm bg-amber-50 px-2.5 py-1.5 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors"
+              onClick={() => (nodeData.onGrade as Function)?.(id)}
+              title="Clique para editar avaliação"
+            >
+              <span className="material-symbols-outlined text-[18px] fill-current">star</span>
+              <span>{(nodeData.grade / 10).toFixed(1)}</span>
+            </div>
+          ) : (
+            <button
+              onClick={() => (nodeData.onGrade as Function)?.(id)}
+              className="flex items-center gap-1.5 text-slate-400 hover:text-amber-600 text-xs font-semibold px-2 py-1.5 rounded-lg hover:bg-amber-50 transition-colors ml-auto"
+              title="Avaliar grupo"
+            >
+              <span className="material-symbols-outlined text-[16px]">hotel_class</span>
+              Avaliar
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

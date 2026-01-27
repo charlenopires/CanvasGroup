@@ -10,6 +10,7 @@ import {
 
 interface ConnectionEdgeProps extends EdgeProps {
   onDeleteClick?: (edgeId: string) => void;
+  onLabelClick?: (edgeId: string, currentLabel: string) => void;
 }
 
 function ConnectionEdgeComponent({
@@ -23,6 +24,7 @@ function ConnectionEdgeComponent({
   data,
   selected,
   onDeleteClick,
+  onLabelClick,
 }: ConnectionEdgeProps) {
   const edgeData = data as { label?: string } | undefined;
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -92,26 +94,30 @@ function ConnectionEdgeComponent({
       {edgeData?.label && (
         <EdgeLabelRenderer>
           <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onLabelClick?.(id, edgeData.label || '');
+            }}
             className={`
-              absolute pointer-events-all nodrag nopan
+              absolute pointer-events-all nodrag nopan cursor-pointer
               px-3 py-1.5 rounded-lg
-              bg-white dark:bg-slate-800
-              border border-primary/30 dark:border-primary/50
-              shadow-md
-              text-xs font-semibold text-primary
+              bg-white hover:bg-slate-50
+              border border-slate-200
+              shadow-[0_1px_3px_rgba(0,0,0,0.08)]
+              text-xs font-semibold
               transition-all duration-200
-              ${selected ? 'ring-2 ring-red-500 ring-offset-1 border-red-300' : ''}
+              flex items-center gap-1.5
+              ${selected ? 'ring-2 ring-red-500 ring-offset-1 border-red-300' : 'text-slate-600'}
             `}
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
             }}
+            title="Clique para editar"
           >
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined" style={{ fontSize: '14px' }}>
-                apps
-              </span>
-              {edgeData.label}
-            </div>
+            <span className="material-symbols-outlined text-teal-500" style={{ fontSize: '14px' }}>
+              apps
+            </span>
+            {edgeData.label}
           </div>
         </EdgeLabelRenderer>
       )}

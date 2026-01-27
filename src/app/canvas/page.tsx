@@ -18,10 +18,33 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { GroupNode, ConnectionEdge, AppNameModal, SectionHeader } from '@/components/canvas';
+import { GroupNode, ConnectionEdge, AppNameModal, GradeModal, SectionHeader } from '@/components/canvas';
 import { ConfirmModal } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { isAdminEmail } from '@/lib/constants';
 import type { GroupNodeData, ConnectionEdgeData, ActivityLogEntry, NodeType, GroupStatus } from '@/types/canvas';
+
+// Remove default React Flow group node wrapper styles
+const customStyles = `
+  .react-flow__node-group,
+  .react-flow__node.react-flow__node-group {
+    border: none !important;
+    background: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+  }
+`;
+
+// Inject custom styles
+if (typeof document !== 'undefined') {
+  const styleId = 'react-flow-custom-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = customStyles;
+    document.head.appendChild(style);
+  }
+}
 
 // Custom node types
 const nodeTypes = {
@@ -31,13 +54,13 @@ const nodeTypes = {
 
 // Column positions - Left: Médio A, Center: Superior, Right: Médio B
 const COLUMN_POSITIONS = {
-  'medio-a': { x: 50, headerY: 30 },
-  'superior': { x: 370, headerY: 30 },
-  'medio-b': { x: 690, headerY: 30 },
+  'medio-a': { x: 30, headerY: 30 },
+  'superior': { x: 420, headerY: 30 },
+  'medio-b': { x: 810, headerY: 30 },
 };
 
 const CARD_START_Y = 90;
-const CARD_SPACING = 220;
+const CARD_SPACING = 250;
 
 // Section header nodes
 const sectionHeaders: Node[] = [
@@ -91,10 +114,12 @@ interface ApiGroup {
   positionX: number | null;
   positionY: number | null;
   members: { id: string; name: string }[];
+  grade?: number;
+  observations?: string;
 }
 
 // Transform API data to React Flow nodes - organized in columns
-function apiGroupToNode(group: ApiGroup, indexInColumn: number): Node {
+function apiGroupToNode(group: ApiGroup, indexInColumn: number, onGrade: (id: string) => void): Node {
   const columnX = COLUMN_POSITIONS[group.type].x;
   const y = CARD_START_Y + (indexInColumn * CARD_SPACING);
 
@@ -112,6 +137,9 @@ function apiGroupToNode(group: ApiGroup, indexInColumn: number): Node {
       projectId: group.projectId || undefined,
       status: (group.status || 'active') as GroupStatus,
       members: group.members.map(m => m.name),
+      grade: group.grade,
+      observations: group.observations,
+      onGrade,
     },
   };
 }
@@ -171,7 +199,14 @@ function CanvasContent() {
   const [activityLog, setActivityLog] = useState<ActivityLogEntry[]>([]);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [edgeToDelete, setEdgeToDelete] = useState<Edge | null>(null);
+  const [editingEdge, setEditingEdge] = useState<{ id: string; label: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [gradingGroupId, setGradingGroupId] = useState<string | null>(null);
+  const [isSavingGrade, setIsSavingGrade] = useState(false);
+
+  const openGradeModal = useCallback((groupId: string) => {
+    setGradingGroupId(groupId);
+  }, []);
 
   // Load groups from API
   useEffect(() => {
@@ -187,7 +222,7 @@ function CanvasContent() {
           const groupNodes = apiGroups.map((group) => {
             const indexInColumn = typeCounts[group.type];
             typeCounts[group.type]++;
-            return apiGroupToNode(group, indexInColumn);
+            return apiGroupToNode(group, indexInColumn, openGradeModal);
           });
 
           setNodes([...sectionHeaders, ...groupNodes]);
@@ -211,14 +246,24 @@ function CanvasContent() {
           const data = await response.json();
           const apiConnections = data.data || [];
 
-          const connectionEdges: Edge[] = apiConnections.map((conn: any) => ({
-            id: conn.id,
-            source: conn.sourceId,
-            target: conn.targetId,
-            type: 'connection',
-            animated: true,
-            data: { label: conn.appName },
-          }));
+          const connectionEdges: Edge[] = apiConnections.map((conn: any) => {
+            // Determine target handle based on source node type
+            const sourceNode = nodes.find(n => n.id === conn.sourceId);
+            const sourceType = (sourceNode?.data as GroupNodeData)?.type;
+
+            // Médio A connects to left handle, Médio B connects to right handle
+            const targetHandle = sourceType === 'medio-a' ? 'left' : 'right';
+
+            return {
+              id: conn.id,
+              source: conn.sourceId,
+              target: conn.targetId,
+              targetHandle,
+              type: 'connection',
+              animated: true,
+              data: { label: conn.appName },
+            };
+          });
 
           setEdges(connectionEdges);
         }
@@ -228,7 +273,7 @@ function CanvasContent() {
     };
 
     fetchConnections();
-  }, [setEdges]);
+  }, [setEdges, nodes]);
 
   const logActivity = useCallback((
     action: 'create' | 'update' | 'delete',
@@ -268,25 +313,26 @@ function CanvasContent() {
       return { valid: false, error: 'Só é possível conectar a grupos Superior' };
     }
 
+    // Check if source already has a connection
     const sourceHasConnection = edges.some(e => e.source === connection.source);
     if (sourceHasConnection) {
       return { valid: false, error: 'Este grupo já possui uma conexão ativa' };
     }
 
-    const existingConnectionsToTarget = edges.filter(e => e.target === connection.target);
-    const sourceType = sourceData.type;
+    // Determine which target handle should be used based on source type
+    const expectedTargetHandle = sourceData.type === 'medio-a' ? 'left' : 'right';
 
-    for (const edge of existingConnectionsToTarget) {
-      const edgeSource = nodes.find(n => n.id === edge.source);
-      if (edgeSource) {
-        const edgeSourceData = edgeSource.data as GroupNodeData;
-        if (edgeSourceData.type === sourceType) {
-          return {
-            valid: false,
-            error: `Este Superior já possui uma conexão do ${sourceType === 'medio-a' ? 'Médio A' : 'Médio B'}`,
-          };
-        }
-      }
+    // Check if the target handle is already in use
+    const handleAlreadyUsed = edges.some(e =>
+      e.target === connection.target && e.targetHandle === expectedTargetHandle
+    );
+
+    if (handleAlreadyUsed) {
+      const side = expectedTargetHandle === 'left' ? 'esquerdo' : 'direito';
+      return {
+        valid: false,
+        error: `O conector ${side} deste Superior já está em uso`,
+      };
     }
 
     return { valid: true };
@@ -303,9 +349,55 @@ function CanvasContent() {
 
     setPendingConnection(connection);
     setModalOpen(true);
+    setPendingConnection(connection);
+    setModalOpen(true);
   }, [isValidConnection]);
 
+  const handleEdgeLabelClick = useCallback((edgeId: string, currentLabel: string) => {
+    setEditingEdge({ id: edgeId, label: currentLabel });
+    setModalOpen(true);
+  }, []);
+
   const saveConnection = useCallback(async (appName: string) => {
+    // Handle Update
+    if (editingEdge) {
+      try {
+        const response = await fetch(`/api/connections/${editingEdge.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ appName }),
+        });
+
+        if (response.ok) {
+          setEdges(eds =>
+            eds.map(e =>
+              e.id === editingEdge.id
+                ? { ...e, data: { ...e.data, label: appName } }
+                : e
+            )
+          );
+
+          // Find nodes for log
+          const edge = edges.find(e => e.id === editingEdge.id);
+          const sourceNode = nodes.find(n => n.id === edge?.source);
+          const targetNode = nodes.find(n => n.id === edge?.target);
+          const sourceTitle = (sourceNode?.data as GroupNodeData)?.title || 'Unknown';
+          const targetTitle = (targetNode?.data as GroupNodeData)?.title || 'Unknown';
+
+          logActivity('update', 'connection', editingEdge.id, appName, `Updated app name: ${sourceTitle} → ${targetTitle}`);
+        }
+      } catch (error) {
+        console.error('Error updating connection:', error);
+        setConnectionError('Falha ao atualizar conexão');
+        setTimeout(() => setConnectionError(null), 3000);
+      }
+
+      setModalOpen(false);
+      setEditingEdge(null);
+      return;
+    }
+
+    // Handle Create
     if (!pendingConnection) return;
 
     const sourceNode = nodes.find(n => n.id === pendingConnection.source);
@@ -351,24 +443,35 @@ function CanvasContent() {
 
     setModalOpen(false);
     setPendingConnection(null);
-  }, [pendingConnection, nodes, setEdges, logActivity]);
+  }, [pendingConnection, editingEdge, nodes, setEdges, edges, logActivity]);
 
   const closeModal = useCallback(() => {
     setModalOpen(false);
     setPendingConnection(null);
+    setEditingEdge(null);
   }, []);
 
   const sourceTitle = useMemo(() => {
+    if (editingEdge) {
+      const edge = edges.find(e => e.id === editingEdge.id);
+      const node = nodes.find(n => n.id === edge?.source);
+      return (node?.data as GroupNodeData)?.title;
+    }
     if (!pendingConnection) return undefined;
     const node = nodes.find(n => n.id === pendingConnection.source);
     return (node?.data as GroupNodeData)?.title;
-  }, [pendingConnection, nodes]);
+  }, [pendingConnection, editingEdge, edges, nodes]);
 
   const targetTitle = useMemo(() => {
+    if (editingEdge) {
+      const edge = edges.find(e => e.id === editingEdge.id);
+      const node = nodes.find(n => n.id === edge?.target);
+      return (node?.data as GroupNodeData)?.title;
+    }
     if (!pendingConnection) return undefined;
     const node = nodes.find(n => n.id === pendingConnection.target);
     return (node?.data as GroupNodeData)?.title;
-  }, [pendingConnection, nodes]);
+  }, [pendingConnection, editingEdge, edges, nodes]);
 
   const handleEdgeDeleteClick = useCallback((edgeId: string) => {
     const edge = edges.find(e => e.id === edgeId);
@@ -406,9 +509,13 @@ function CanvasContent() {
 
   const edgeTypes = useMemo(() => ({
     connection: (props: any) => (
-      <ConnectionEdge {...props} onDeleteClick={handleEdgeDeleteClick} />
+      <ConnectionEdge
+        {...props}
+        onDeleteClick={handleEdgeDeleteClick}
+        onLabelClick={handleEdgeLabelClick}
+      />
     ),
-  }), [handleEdgeDeleteClick]);
+  }), [handleEdgeDeleteClick, handleEdgeLabelClick]);
 
   const edgeToDeleteInfo = useMemo(() => {
     if (!edgeToDelete) return null;
@@ -422,6 +529,60 @@ function CanvasContent() {
     };
   }, [edgeToDelete, nodes]);
 
+  const gradingNodeData = useMemo(() => {
+    if (!gradingGroupId) return null;
+    const node = nodes.find(n => n.id === gradingGroupId);
+    return node ? (node.data as GroupNodeData) : null;
+  }, [nodes, gradingGroupId]);
+
+  const saveGrade = useCallback(async (grade: number, observations: string) => {
+    if (!gradingGroupId) return;
+
+    setIsSavingGrade(true);
+    try {
+      const response = await fetch('/api/grades', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groupId: gradingGroupId,
+          grade, // 0-100
+          observations,
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setNodes(nds => nds.map(node => {
+          if (node.id === gradingGroupId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                grade,
+                observations,
+              },
+            };
+          }
+          return node;
+        }));
+
+        const node = nodes.find(n => n.id === gradingGroupId);
+        const title = (node?.data as GroupNodeData)?.title || 'Unknown';
+        logActivity('update', 'group', gradingGroupId, title, `Avaliado com nota ${(grade / 10).toFixed(1)}`);
+
+        setGradingGroupId(null);
+      } else {
+        throw new Error('Failed to save grade');
+      }
+    } catch (error) {
+      console.error('Error saving grade:', error);
+      setConnectionError('Falha ao salvar avaliação');
+      setTimeout(() => setConnectionError(null), 3000);
+    } finally {
+      setIsSavingGrade(false);
+    }
+  }, [gradingGroupId, nodes, logActivity, setNodes]);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-white font-display">
       {/* Header */}
@@ -433,12 +594,14 @@ function CanvasContent() {
           <span className="text-base font-bold text-slate-800">Prof Charleno Canvas</span>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/admin')}
-            className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-          >
-            Dashboard
-          </button>
+          {user?.email && isAdminEmail(user.email) && (
+            <button
+              onClick={() => router.push('/admin')}
+              className="px-3 py-1.5 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+            >
+              Dashboard
+            </button>
+          )}
           <span className="text-sm text-slate-600">{user?.displayName || 'User'}</span>
           {user?.photoURL ? (
             <img src={user.photoURL} alt="Avatar" className="w-8 h-8 rounded-full object-cover" />
@@ -498,16 +661,16 @@ function CanvasContent() {
           panOnDrag={true}
           nodesDraggable={false}
           nodesConnectable={true}
-          elementsSelectable={true}
+          elementsSelectable={false}
           selectNodesOnDrag={false}
           selectionOnDrag={false}
           proOptions={{ hideAttribution: true }}
         >
           <Background
             variant={BackgroundVariant.Dots}
-            gap={20}
-            size={1}
-            color="#e2e8f0"
+            gap={24}
+            size={0.8}
+            color="#94a3b8"
           />
         </ReactFlow>
 
@@ -521,6 +684,17 @@ function CanvasContent() {
         onSave={saveConnection}
         sourceTitle={sourceTitle}
         targetTitle={targetTitle}
+        currentAppName={editingEdge?.label}
+      />
+
+      <GradeModal
+        isOpen={!!gradingGroupId}
+        onClose={() => setGradingGroupId(null)}
+        onSave={saveGrade}
+        groupName={gradingNodeData?.title}
+        initialGrade={gradingNodeData?.grade}
+        initialObservations={gradingNodeData?.observations}
+        isSaving={isSavingGrade}
       />
 
       <ConfirmModal

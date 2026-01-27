@@ -5,6 +5,21 @@ import { isAdminEmail } from '@/lib/constants';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+// CORS headers for cross-origin requests
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+// OPTIONS handler for CORS preflight
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  });
+}
+
 // GET endpoint for debugging
 export async function GET() {
   console.log('[Auth Login GET] Health check');
@@ -17,13 +32,13 @@ export async function GET() {
       status: 'ok',
       userCount: count.length,
       timestamp: new Date().toISOString(),
-    });
+    }, { headers: corsHeaders });
   } catch (error) {
     console.error('[Auth Login GET] Error:', error);
     return NextResponse.json({
       status: 'error',
       message: error instanceof Error ? error.message : 'Unknown error',
-    }, { status: 500 });
+    }, { status: 500, headers: corsHeaders });
   }
 }
 
@@ -53,7 +68,7 @@ export async function POST(request: NextRequest) {
       console.log('[Auth Login] Body parsed:', { email: body.email, hasUid: !!body.firebaseUid });
     } catch (parseError) {
       console.error('[Auth Login] Parse error:', parseError);
-      return NextResponse.json({ error: 'Invalid JSON', details: String(parseError) }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid JSON', details: String(parseError) }, { status: 400, headers: corsHeaders });
     }
 
     const { firebaseUid, email, displayName, photoURL } = body;
@@ -61,7 +76,7 @@ export async function POST(request: NextRequest) {
     // Validate
     if (!firebaseUid || !email) {
       console.log('[Auth Login] Validation failed - missing fields');
-      return NextResponse.json({ error: 'firebaseUid and email are required' }, { status: 400 });
+      return NextResponse.json({ error: 'firebaseUid and email are required' }, { status: 400, headers: corsHeaders });
     }
 
     // Get metadata
@@ -146,7 +161,7 @@ export async function POST(request: NextRequest) {
     };
 
     console.log('[Auth Login] SUCCESS:', response.email, response.role);
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: corsHeaders });
 
   } catch (error) {
     console.error('[Auth Login] TOP-LEVEL ERROR:', error);
@@ -156,6 +171,6 @@ export async function POST(request: NextRequest) {
       error: 'Server error',
       details: message,
       stack: process.env.NODE_ENV === 'development' ? stack : undefined
-    }, { status: 500 });
+    }, { status: 500, headers: corsHeaders });
   }
 }
