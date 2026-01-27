@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       status: status || 'active',
       positionX: positionX || 0,
       positionY: positionY || 0,
+      createdBy: userId || null,
     }).returning();
 
     // Add members if provided

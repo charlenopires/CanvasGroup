@@ -14,6 +14,9 @@ export interface GroupNodeData extends Record<string, unknown> {
   status?: GroupStatus;
   grade?: number;
   observations?: string;
+  canEdit?: boolean;
+  onEdit?: (id: string) => void;
+  onGrade?: (id: string) => void;
 }
 
 export type GroupNode = Node<GroupNodeData>;

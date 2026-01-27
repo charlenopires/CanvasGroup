@@ -97,17 +97,28 @@ function GroupNodeComponent({
           <h3 className="text-base font-bold text-slate-800">
             {nodeData.title}
           </h3>
-          <span
-            className={`
-              px-2 py-0.5 rounded text-[11px] font-medium
-              ${status === 'active'
-                ? 'bg-teal-50 text-teal-600 border border-teal-200'
-                : 'bg-amber-50 text-amber-600 border border-amber-200'
-              }
-            `}
-          >
-            {status === 'active' ? 'Active' : 'Pending'}
-          </span>
+          <div className="flex items-center gap-1.5">
+            {nodeData.canEdit && (
+              <button
+                onClick={() => (nodeData.onEdit as Function)?.(id)}
+                className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                title="Editar grupo"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>edit</span>
+              </button>
+            )}
+            <span
+              className={`
+                px-2 py-0.5 rounded text-[11px] font-medium
+                ${status === 'active'
+                  ? 'bg-teal-50 text-teal-600 border border-teal-200'
+                  : 'bg-amber-50 text-amber-600 border border-amber-200'
+                }
+              `}
+            >
+              {status === 'active' ? 'Active' : 'Pending'}
+            </span>
+          </div>
         </div>
 
         {/* Group Leader - Only for Superior */}

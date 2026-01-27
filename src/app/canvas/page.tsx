@@ -18,7 +18,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { GroupNode, ConnectionEdge, AppNameModal, GradeModal, SectionHeader } from '@/components/canvas';
+import { GroupNode, ConnectionEdge, AppNameModal, GradeModal, CreateGroupModal, EditGroupModal, SectionHeader } from '@/components/canvas';
 import { ConfirmModal } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { isAdminEmail } from '@/lib/constants';
@@ -119,7 +119,13 @@ interface ApiGroup {
 }
 
 // Transform API data to React Flow nodes - organized in columns
-function apiGroupToNode(group: ApiGroup, indexInColumn: number, onGrade: (id: string) => void): Node {
+function apiGroupToNode(
+  group: ApiGroup,
+  indexInColumn: number,
+  onGrade: (id: string) => void,
+  onEdit?: (id: string) => void,
+  canEdit?: boolean
+): Node {
   const columnX = COLUMN_POSITIONS[group.type].x;
   const y = CARD_START_Y + (indexInColumn * CARD_SPACING);
 
@@ -140,6 +146,8 @@ function apiGroupToNode(group: ApiGroup, indexInColumn: number, onGrade: (id: st
       grade: group.grade,
       observations: group.observations,
       onGrade,
+      onEdit,
+      canEdit,
     },
   };
 }
@@ -203,10 +211,21 @@ function CanvasContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [gradingGroupId, setGradingGroupId] = useState<string | null>(null);
   const [isSavingGrade, setIsSavingGrade] = useState(false);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [isSavingGroup, setIsSavingGroup] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const openGradeModal = useCallback((groupId: string) => {
     setGradingGroupId(groupId);
   }, []);
+
+  const openEditModal = useCallback((groupId: string) => {
+    setEditingGroupId(groupId);
+  }, []);
+
+  // Check if user can manage groups (not charleno@gmail.com)
+  const canManageGroups = user?.email && user.email.toLowerCase() !== 'charleno@gmail.com';
 
   // Load groups from API
   useEffect(() => {
@@ -222,7 +241,13 @@ function CanvasContent() {
           const groupNodes = apiGroups.map((group) => {
             const indexInColumn = typeCounts[group.type];
             typeCounts[group.type]++;
-            return apiGroupToNode(group, indexInColumn, openGradeModal);
+            return apiGroupToNode(
+              group,
+              indexInColumn,
+              openGradeModal,
+              openEditModal,
+              !!canManageGroups
+            );
           });
 
           setNodes([...sectionHeaders, ...groupNodes]);
@@ -235,7 +260,7 @@ function CanvasContent() {
     };
 
     fetchGroups();
-  }, [setNodes]);
+  }, [setNodes, canManageGroups, openGradeModal, openEditModal]);
 
   // Load connections from API
   useEffect(() => {
@@ -535,6 +560,66 @@ function CanvasContent() {
     return node ? (node.data as GroupNodeData) : null;
   }, [nodes, gradingGroupId]);
 
+  const saveGroup = useCallback(async (data: { name: string; type: 'superior' | 'medio-a' | 'medio-b'; members: string[] }) => {
+    if (!user) return;
+
+    setIsSavingGroup(true);
+    try {
+      // Get userId from API
+      const meResponse = await fetch('/api/auth/me', {
+        headers: { 'x-firebase-uid': user.uid },
+      });
+      const meData = await meResponse.json();
+      const userId = meData?.id;
+
+      const response = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          type: data.type,
+          members: data.members,
+          userId,
+        }),
+      });
+
+      if (response.ok) {
+        const newGroup = await response.json();
+
+        // Calculate index for this type
+        const existingNodesOfType = nodes.filter(
+          n => n.type === 'group' && (n.data as GroupNodeData)?.type === data.type
+        );
+        const indexInColumn = existingNodesOfType.length;
+
+        const newNode = apiGroupToNode(
+          {
+            ...newGroup,
+            members: newGroup.members || [],
+            grade: undefined,
+            observations: undefined,
+          },
+          indexInColumn,
+          openGradeModal,
+          openEditModal,
+          true
+        );
+
+        setNodes(nds => [...nds, newNode]);
+        logActivity('create', 'group', newGroup.id, data.name, `Tipo: ${data.type}`);
+        setCreateGroupOpen(false);
+      } else {
+        throw new Error('Failed to create group');
+      }
+    } catch (error) {
+      console.error('Error creating group:', error);
+      setConnectionError('Falha ao criar grupo');
+      setTimeout(() => setConnectionError(null), 3000);
+    } finally {
+      setIsSavingGroup(false);
+    }
+  }, [user, nodes, setNodes, logActivity, openGradeModal, openEditModal]);
+
   const saveGrade = useCallback(async (grade: number, observations: string) => {
     if (!gradingGroupId) return;
 
@@ -583,6 +668,74 @@ function CanvasContent() {
     }
   }, [gradingGroupId, nodes, logActivity, setNodes]);
 
+  const editingGroupData = useMemo(() => {
+    if (!editingGroupId) return null;
+    const node = nodes.find(n => n.id === editingGroupId);
+    if (!node) return null;
+    const data = node.data as GroupNodeData;
+    return {
+      id: editingGroupId,
+      name: data.title,
+      type: data.type,
+      leaderName: data.leaderName,
+      members: data.members,
+    };
+  }, [nodes, editingGroupId]);
+
+  const saveEdit = useCallback(async (data: { name: string; leaderName: string | null; members: string[] }) => {
+    if (!editingGroupId || !user) return;
+
+    setIsSavingEdit(true);
+    try {
+      // Get userId from API
+      const meResponse = await fetch('/api/auth/me', {
+        headers: { 'x-firebase-uid': user.uid },
+      });
+      const meData = await meResponse.json();
+      const userId = meData?.id;
+
+      const response = await fetch(`/api/groups/${editingGroupId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.name,
+          leaderName: data.leaderName,
+          members: data.members,
+          userId,
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        setNodes(nds => nds.map(node => {
+          if (node.id === editingGroupId) {
+            return {
+              ...node,
+              data: {
+                ...node.data,
+                title: data.name,
+                leaderName: data.leaderName || undefined,
+                members: data.members,
+              },
+            };
+          }
+          return node;
+        }));
+
+        logActivity('update', 'group', editingGroupId, data.name, `Editado por ${user.displayName || user.email}`);
+        setEditingGroupId(null);
+      } else {
+        throw new Error('Failed to update group');
+      }
+    } catch (error) {
+      console.error('Error updating group:', error);
+      setConnectionError('Falha ao atualizar grupo');
+      setTimeout(() => setConnectionError(null), 3000);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  }, [editingGroupId, user, setNodes, logActivity]);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-white font-display">
       {/* Header */}
@@ -594,6 +747,15 @@ function CanvasContent() {
           <span className="text-base font-bold text-slate-800">Prof Charleno Canvas</span>
         </div>
         <div className="flex items-center gap-3">
+          {canManageGroups && (
+            <button
+              onClick={() => setCreateGroupOpen(true)}
+              className="px-3 py-1.5 text-sm text-white bg-teal-500 hover:bg-teal-600 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>add</span>
+              Cadastrar Grupo
+            </button>
+          )}
           {user?.email && isAdminEmail(user.email) && (
             <button
               onClick={() => router.push('/admin')}
@@ -708,6 +870,21 @@ function CanvasContent() {
         }
         confirmText={isDeleting ? 'Removendo...' : 'Remover'}
         variant="danger"
+      />
+
+      <CreateGroupModal
+        isOpen={createGroupOpen}
+        onClose={() => setCreateGroupOpen(false)}
+        onSave={saveGroup}
+        isSaving={isSavingGroup}
+      />
+
+      <EditGroupModal
+        isOpen={!!editingGroupId}
+        onClose={() => setEditingGroupId(null)}
+        onSave={saveEdit}
+        groupData={editingGroupData}
+        isSaving={isSavingEdit}
       />
     </div>
   );

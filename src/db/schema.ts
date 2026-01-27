@@ -45,6 +45,7 @@ export const groups = pgTable('groups', {
   status: statusEnum('status').default('active'),
   positionX: integer('position_x').default(0),
   positionY: integer('position_y').default(0),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
 });
