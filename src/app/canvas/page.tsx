@@ -747,6 +747,13 @@ function CanvasContent() {
           <span className="text-base font-bold text-slate-800">Prof Charleno Canvas</span>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/trabalho')}
+            className="px-3 py-1.5 text-sm text-white bg-teal-500 hover:bg-teal-600 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: '18px' }}>assignment</span>
+            Enviar Trabalho
+          </button>
           {canManageGroups && (
             <button
               onClick={() => setCreateGroupOpen(true)}

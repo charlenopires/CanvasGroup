@@ -78,12 +78,23 @@ export const grades = pgTable('grades', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Project submissions table
+export const projectSubmissions = pgTable('project_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  groupId: uuid('group_id').references(() => groups.id, { onDelete: 'cascade' }).notNull(),
+  projectUrl: text('project_url').notNull(),
+  submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 // Relations
 export const groupsRelations = relations(groups, ({ many }) => ({
   members: many(groupMembers),
   outgoingConnections: many(connections, { relationName: 'source' }),
   incomingConnections: many(connections, { relationName: 'target' }),
   grades: many(grades),
+  submissions: many(projectSubmissions),
 }));
 
 export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
@@ -117,6 +128,17 @@ export const gradesRelations = relations(grades, ({ one }) => ({
   }),
 }));
 
+export const projectSubmissionsRelations = relations(projectSubmissions, ({ one }) => ({
+  group: one(groups, {
+    fields: [projectSubmissions.groupId],
+    references: [groups.id],
+  }),
+  submittedByUser: one(users, {
+    fields: [projectSubmissions.submittedBy],
+    references: [users.id],
+  }),
+}));
+
 // User relations
 export const usersRelations = relations(users, ({ many }) => ({
   activityLogs: many(activityLogs),
@@ -142,3 +164,5 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 export type NewActivityLog = typeof activityLogs.$inferInsert;
 export type Grade = typeof grades.$inferSelect;
 export type NewGrade = typeof grades.$inferInsert;
+export type ProjectSubmission = typeof projectSubmissions.$inferSelect;
+export type NewProjectSubmission = typeof projectSubmissions.$inferInsert;
